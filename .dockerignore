@@ -1,0 +1,35 @@
+# Python / venv
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+.venv/
+venv/
+transcript/
+.env
+
+# Data
+data/
+**/*.mp4
+**/*.mp3
+**/*.wav
+**/*.zip
+**/*.srt
+**/*.txt
+!requirements.api.txt
+!requirements.worker.txt
+
+# GIT
+.git/
+.gitignore
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Artifacts
+**/*.pytest_cache/
+**/*.mypy_cache/
+**/*.ruff_cache/

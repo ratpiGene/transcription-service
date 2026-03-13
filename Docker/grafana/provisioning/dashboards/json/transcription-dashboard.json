@@ -1,0 +1,74 @@
+{
+  "title": "Transcription Service Dashboard",
+  "timezone": "browser",
+  "schemaVersion": 36,
+  "version": 1,
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Jobs Running",
+      "targets": [
+        {
+          "expr": "transcription_jobs_running"
+        }
+      ],
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 0 }
+    },
+    {
+      "type": "stat",
+      "title": "Successful Jobs",
+      "targets": [
+        {
+          "expr": "transcription_job_success_total"
+        }
+      ],
+      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 0 }
+    },
+    {
+      "type": "stat",
+      "title": "Failed Jobs",
+      "targets": [
+        {
+          "expr": "transcription_job_failure_total"
+        }
+      ],
+      "gridPos": { "h": 6, "w": 6, "x": 12, "y": 0 }
+    },
+    {
+      "type": "gauge",
+      "title": "Jobs Queued",
+      "targets": [
+        {
+          "expr": "transcription_jobs_queued"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "max": 20
+        }
+      },
+      "gridPos": { "h": 6, "w": 6, "x": 18, "y": 0 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Job Duration (avg, 5m)",
+      "targets": [
+        {
+          "expr": "rate(transcription_job_duration_seconds_sum[5m]) / rate(transcription_job_duration_seconds_count[5m])"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 }
+    },
+    {
+      "type": "timeseries",
+      "title": "GPU Memory Usage (MB)",
+      "targets": [
+        {
+          "expr": "gpu_memory_used_mb"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 }
+    }
+  ]
+}

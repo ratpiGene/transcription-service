@@ -1,0 +1,14 @@
+    :root { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; }
+body { margin: 0; background: #0b1220; color: #e8eefc; }
+.container { max-width: 860px; margin: 40px auto; padding: 0 16px; }
+h1 { margin: 0 0 18px; font-size: 28px; }
+h2 { margin: 0 0 12px; font-size: 18px; color: #cfe0ff; }
+.card { background: #101b33; border: 1px solid #1f2f57; border-radius: 12px; padding: 16px; margin: 14px 0; }
+button { cursor: pointer; border: 0; border-radius: 10px; padding: 10px 14px; background: #3b82f6; color: white; font-weight: 600; }
+button:disabled { opacity: .5; cursor: not-allowed; }
+input[type="file"] { margin-right: 10px; }
+pre { background: #0a1326; border: 1px solid #1b2a4e; padding: 12px; border-radius: 10px; overflow: auto; }
+.hidden { display: none; }
+.muted { color: #a8b6d6; font-size: 13px; margin-top: 10px; }
+.row { display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+.checkbox { display: flex; align-items: center; gap: 10px; padding: 10px; border: 1px solid #1b2a4e; border-radius: 10px; margin: 8px 0; background: #0c1630; }

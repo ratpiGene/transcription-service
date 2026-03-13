@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Transcript Service</title>
+  <link rel="stylesheet" href="/ui/style.css" />
+</head>
+<body>
+  <div class="container">
+    <h1>Transcript Service</h1>
+
+    <section class="card">
+      <h2>1) Upload</h2>
+      <form id="uploadForm">
+        <input id="fileInput" type="file" name="file" accept=".mp4,.wav,.mp3" required />
+        <button type="submit">Uploader</button>
+      </form>
+
+      <div class="muted" id="uploadHint">
+        Formats: mp4 / wav / mp3
+      </div>
+
+      <pre id="uploadResp" class="hidden"></pre>
+    </section>
+
+    <section class="card hidden" id="jobSection">
+      <h2>2) Choisir les outputs</h2>
+      <div id="outputsBox"></div>
+      <button id="startJobBtn" disabled>Lancer le job</button>
+    </section>
+
+        <section class="card hidden" id="statusSection">
+      <h2>3) Statut</h2>
+      <div class="row">
+        <div><b>Job:</b> <span id="jobIdLabel">-</span></div>
+        <div><b>Status:</b> <span id="jobStatusLabel">-</span></div>
+      </div>
+      <pre id="statusJson"></pre>
+
+      <div class="row">
+        <button id="downloadBtn" class="hidden">Télécharger le ZIP</button>
+        <button id="resetBtn">Nouveau job</button>
+      </div>
+    </section>
+
+    <section class="card hidden" id="recentJobsSection">
+      <h2>4) Jobs récents</h2>
+      <div id="recentJobsList"></div>
+    </section>
+
+    <section class="card hidden" id="errorSection">
+      <h2>Erreur</h2>
+      <pre id="errorBox"></pre>
+    </section>
+  </div>
+
+  <script src="/ui/app.js"></script>
+</body>
+</html>

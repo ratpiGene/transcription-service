@@ -1,0 +1,6 @@
+redis
+boto3
+ffmpeg-python
+transformers
+prometheus-client
+psutil

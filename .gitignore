@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+
+# Virtual env
+transcript/
+venv/
+.env
+
+# Docker
+*.log
+
+# VS Code
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# MinIO / data
+data/
+*.zip
+
+# files
+data/*
+!data/.gitkeep
+
+# Build
+dist/
+build/
+
+# docker
+commandes docker.txt
