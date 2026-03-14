@@ -4,6 +4,7 @@ import json
 import os
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -193,6 +194,114 @@ def run_job(
 
 
 # =========================
+# SINGLE JOB HANDLER
+# =========================
+
+def handle_job(job_id: str, r, args, s3, s3cfg) -> None:
+    JOBS_RUNNING.inc()
+    t0 = time.time()
+
+    try:
+        st = get_status(r, job_id)
+        if not st:
+            patch_status(
+                r,
+                job_id,
+                status="failed",
+                finished_at=time.time(),
+                error={"type": "StatusNotFound", "message": "status_not_found_in_redis"},
+            )
+            print(f"[JOB] {job_id} failed: status not found in Redis")
+            return
+
+        patch_status(r, job_id, status="running", started_at=time.time(), stage="starting")
+
+        upload_info = st.get("input", {})
+        in_bucket = upload_info.get("bucket")
+        in_key = upload_info.get("key")
+        if not in_bucket or not in_key:
+            raise RuntimeError("missing_input_location_in_status")
+
+        requested_outputs_raw = st.get("requested_outputs")
+        if not requested_outputs_raw:
+            raise RuntimeError("missing_requested_outputs_in_status")
+
+        print(f"[JOB] {job_id} input=s3://{in_bucket}/{in_key} outputs={requested_outputs_raw}")
+
+        patch_status(r, job_id, stage="downloading")
+        job_dir = Path(args.jobs_dir) / job_id
+        job_dir.mkdir(parents=True, exist_ok=True)
+
+        ext = Path(in_key).suffix.lower()
+        local_input = job_dir / f"input{ext}"
+        download_file(s3, in_bucket, in_key, str(local_input))
+
+        patch_status(r, job_id, stage="processing")
+        parsed_outputs = _parse_outputs(list(requested_outputs_raw))
+        options = ProcessOptions(
+            language=st.get("options", {}).get("language", "en"),
+            model=st.get("options", {}).get("model", "openai/whisper-base.en"),
+        )
+
+        local_status = run_job(
+            input_path=local_input,
+            requested_outputs=parsed_outputs,
+            job_root_dir=Path(args.jobs_dir),
+            options=options,
+            job_id=job_id,
+        )
+
+        patch_status(r, job_id, stage="uploading_results")
+        zip_path = Path(local_status.result_zip) if local_status.result_zip else None
+        if not zip_path or not zip_path.exists():
+            raise RuntimeError("zip_missing_after_processing")
+
+        result_key = f"{job_id}/{zip_path.name}"
+        with zip_path.open("rb") as f:
+            upload_fileobj(
+                s3,
+                s3cfg.results_bucket,
+                result_key,
+                f,
+                content_type="application/zip",
+            )
+
+        patch_status(
+            r,
+            job_id,
+            status="succeeded",
+            finished_at=time.time(),
+            stage="done",
+            result={"bucket": s3cfg.results_bucket, "key": result_key},
+            metrics=local_status.metrics or {},
+        )
+
+        JOB_SUCCESS.inc()
+        JOB_DURATION.observe(time.time() - t0)
+        print(f"[JOB] {job_id} succeeded -> s3://{s3cfg.results_bucket}/{result_key}")
+
+    except Exception as e:
+        patch_status(
+            r,
+            job_id,
+            status="failed",
+            finished_at=time.time(),
+            stage="failed",
+            error={"type": e.__class__.__name__, "message": str(e)},
+        )
+        JOB_FAILURE.inc()
+        JOB_DURATION.observe(time.time() - t0)
+        print(f"[JOB] {job_id} failed: {e}")
+
+    finally:
+        try:
+            update_gpu_metrics()
+        except Exception:
+            pass
+        JOBS_RUNNING.dec()
+
+
+# =========================
 # ENTRYPOINT
 # =========================
 
@@ -208,18 +317,23 @@ if __name__ == "__main__":
     # Worker config
     parser.add_argument("--jobs-dir", default="data/jobs")
     parser.add_argument("--language", default="en")
-    parser.add_argument("--model", default="openai/whisper-small.en")
+    parser.add_argument("--model", default="openai/whisper-base.en")
 
     # Daemon mode
     parser.add_argument("--daemon", action="store_true")
     parser.add_argument(
         "--redis-url",
         default=os.environ.get("REDIS_URL", "redis://redis:6379/0"),
-        )
+    )
     parser.add_argument(
         "--queue",
         default=os.environ.get("QUEUE_NAME", "transcription:jobs"),
-        )
+    )
+    parser.add_argument(
+        "--max-concurrent-jobs",
+        type=int,
+        default=int(os.environ.get("MAX_CONCURRENT_JOBS", "3")),
+    )
 
     args = parser.parse_args()
 
@@ -230,149 +344,55 @@ if __name__ == "__main__":
         r = get_redis_client(args.redis_url)
         wait_for_redis_ready(r, max_seconds=30)
 
-        # Start Prometheus GPU metrics server
         start_metrics_server()
         print("Prometheus metrics on :8001/metrics")
 
         print(f"Worker listening on queue '{args.queue}' (redis={args.redis_url})")
+        print(f"Max concurrent jobs: {args.max_concurrent_jobs}")
 
-        # GPU info (daemon only)
         print("CUDA available:", torch.cuda.is_available())
         if torch.cuda.is_available():
             try:
                 print("GPU:", torch.cuda.get_device_name(0))
             except Exception:
                 pass
-            
-        # Prometheus metrics endpoint (daemon only)
-        start_metrics_server()
-        print("Prometheus metrics on :8001/metrics")
 
-        # MinIO client
         s3cfg = load_s3_config()
         s3 = get_s3_client(s3cfg)
 
-        # Ensure buckets exist (ensure_bucket must be idempotent in storage.py)
         ensure_bucket(s3, s3cfg.uploads_bucket)
         ensure_bucket(s3, s3cfg.results_bucket)
 
-        while True:
-            try :
-                JOBS_QUEUED.labels(queue=args.queue).set(r.llen(args.queue))
-            except Exception:
-                pass
+        with ThreadPoolExecutor(max_workers=args.max_concurrent_jobs) as executor:
+            futures = set()
 
-            msg = dequeue_job_blocking(r, args.queue, timeout_s=0)
-            if msg is None:
-                continue
+            while True:
+                # Clean finished futures
+                done = {f for f in futures if f.done()}
+                for f in done:
+                    try:
+                        f.result()
+                    except Exception as e:
+                        print(f"[WORKER] background job raised: {e}")
+                futures -= done
 
-            job_id = msg.job_id
+                # Update queue depth metric
+                try:
+                    JOBS_QUEUED.labels(queue=args.queue).set(r.llen(args.queue))
+                except Exception:
+                    pass
 
-            st = get_status(r, job_id)
-            if not st:
-                # Don't leave "phantom jobs": mark failed explicitly
-                patch_status(
-                    r,
-                    job_id,
-                    status="failed",
-                    finished_at=time.time(),
-                    error={"type": "StatusNotFound", "message": "status_not_found_in_redis"},
-                )
-                print(f"[JOB] {job_id} failed: status not found in Redis")
-                continue
+                # If all slots are busy, wait a bit
+                if len(futures) >= args.max_concurrent_jobs:
+                    time.sleep(0.1)
+                    continue
 
-            # Mark running
-            patch_status(r, job_id, status="running", started_at=time.time(), stage="starting")
+                msg = dequeue_job_blocking(r, args.queue, timeout_s=1)
+                if msg is None:
+                    continue
 
-            JOBS_RUNNING.inc()
-            t0 = time.time()
-
-            try:
-                # 1) locate input in MinIO
-                upload_info = st.get("input", {})
-                in_bucket = upload_info.get("bucket")
-                in_key = upload_info.get("key")
-                if not in_bucket or not in_key:
-                    raise RuntimeError("missing_input_location_in_status")
-
-                # 2) outputs to generate (stored in Redis by API /jobs)
-                requested_outputs_raw = st.get("requested_outputs")
-                if not requested_outputs_raw:
-                    raise RuntimeError("missing_requested_outputs_in_status")
-
-                print(f"[JOB] {job_id} input=s3://{in_bucket}/{in_key} outputs={requested_outputs_raw}")
-
-                # 3) download input locally into job folder
-                patch_status(r, job_id, stage="downloading")
-                job_dir = Path(args.jobs_dir) / job_id
-                job_dir.mkdir(parents=True, exist_ok=True)
-
-                ext = Path(in_key).suffix.lower()  # .mp4 or .wav
-                local_input = job_dir / f"input{ext}"
-                download_file(s3, in_bucket, in_key, str(local_input))
-
-                # 4) run local processing
-                patch_status(r, job_id, stage="processing")
-                parsed_outputs = _parse_outputs(list(requested_outputs_raw))
-                options = ProcessOptions(
-                    language=st.get("options", {}).get("language", "en"),
-                    model=st.get("options", {}).get("model", "openai/whisper-small.en"),
-                )
-
-                local_status = run_job(
-                    input_path=local_input,
-                    requested_outputs=parsed_outputs,
-                    job_root_dir=Path(args.jobs_dir),
-                    options=options,
-                    job_id=job_id,
-                )
-
-                # 5) upload zip to MinIO results bucket
-                patch_status(r, job_id, stage="uploading_results")
-                zip_path = Path(local_status.result_zip) if local_status.result_zip else None
-                if not zip_path or not zip_path.exists():
-                    raise RuntimeError("zip_missing_after_processing")
-
-                result_key = f"{job_id}/{zip_path.name}"
-                with zip_path.open("rb") as f:
-                    upload_fileobj(
-                        s3,
-                        s3cfg.results_bucket,
-                        result_key,
-                        f,
-                        content_type="application/zip",
-                    )
-
-                # 6) mark succeeded in Redis
-                patch_status(
-                    r,
-                    job_id,
-                    status="succeeded",
-                    finished_at=time.time(),
-                    stage="done",
-                    result={"bucket": s3cfg.results_bucket, "key": result_key},
-                    metrics=local_status.metrics or st.get("metrics", {}),
-                )
-
-                JOB_SUCCESS.inc()
-                JOB_DURATION.observe(time.time() - t0)
-                JOBS_RUNNING.dec()
-
-                print(f"[JOB] {job_id} succeeded -> s3://{s3cfg.results_bucket}/{result_key}")
-
-            except Exception as e:
-                JOB_FAILURE.inc()
-                JOBS_RUNNING.dec()
-                
-                patch_status(
-                    r,
-                    job_id,
-                    status="failed",
-                    finished_at=time.time(),
-                    stage="failed",
-                    error={"type": e.__class__.__name__, "message": str(e)},
-                )
-                print(f"[JOB] {job_id} failed: {e}")
+                future = executor.submit(handle_job, msg.job_id, r, args, s3, s3cfg)
+                futures.add(future)
 
     # =========================
     # LOCAL CLI MODE

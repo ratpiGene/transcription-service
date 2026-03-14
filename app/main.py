@@ -171,7 +171,7 @@ async def create_job(payload: dict[str, Any]):
     job_id = payload.get("job_id")
     requested_outputs = payload.get("requested_outputs")
     language = payload.get("language", "en")
-    model = payload.get("model", "openai/whisper-small.en")
+    model = payload.get("model", "openai/whisper-base.en")
     client_id = payload.get("client_id")
 
     if not job_id or not isinstance(job_id, str):

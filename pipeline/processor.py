@@ -77,7 +77,7 @@ def validate_requested_outputs(input_type: InputType, requested: Iterable[Output
 @dataclass(frozen=True)
 class ProcessOptions:
     language: str = "en"
-    model: str = "openai/whisper-small.en"
+    model: str = "openai/whisper-base.en"
 
 
 @dataclass

@@ -53,6 +53,7 @@ services:
       context: ..
       dockerfile: docker/worker.gpu.Dockerfile
     environment:
+      MAX_CONCURRENT_JOBS: 3
       REDIS_URL: redis://redis:6379/0
       QUEUE_NAME: transcription:jobs
       MINIO_ENDPOINT: http://minio:9000

@@ -37,7 +37,7 @@ __Flow :__
 
 ## 3. Modèle IA
 ```bash
-openai/whisper-small.en
+openai/whisper-base.en
 ```
 Meilleur compromis que la version medium au niveau RAM / vitesse / précision pour l'hardware à disposition.
 
@@ -107,6 +107,7 @@ Prometheus scrape :
 - Job status
 - Queue depth
 - Job duration
+- GPU utilization
 - GPU memory usage
 - Success / failure
 
@@ -120,6 +121,9 @@ Docker/grafana/provisioning/
 - Isolation logique par utilisateur
 - Récupération des jobs après refresh UI
 - Gestion concurrente via Redis queue
+- Worker configurable via MAX_CONCURRENT_JOBS
+- Traitement GPU concurrent (3 jobs simultanés)
+- Limitation volontaire pour éviter saturation VRAM (~8 acceptable pour ce modèle et une RTX 3050 Laptop)
 
 ## 9. Scalabilité
 Le système peut évoluer via :
@@ -129,7 +133,7 @@ Le système peut évoluer via :
 - GPU dédié par worker
 
 ## 10. Limitations actuelles
-- Single GPU
+- Single GPU (concurrence limitée à 3 jobs)
 - Pas de rate limiting
 - Pas d’auth forte
 - Pas de multi-GPU orchestration
