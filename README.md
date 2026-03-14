@@ -3,160 +3,133 @@
 _Projet M2 : "Industrialisation de l'IA dans le cloud" -> Transcription Media as a Service_
 
 ## 1. Objectif & Description
-Ce projet implémente un service de transcription multimédia scalable permettant :
-- Upload de vidéos ou audio
-- Transcription automatique via IA (Whisper)
+Implémenter un service de Transcription Media as a Service scalable, permettant :
+- Upload vidéo / audio
+- Transcription automatique via Whisper
 - Génération de sous-titres
-
-- Génération de vidéos avec sous-titres
-- Traitement asynchrone par queue
+- Embedding vidéo
+- Traitement asynchrone via queue
 - Monitoring temps réel
 - Dashboard admin
 - Accélération GPU
-- Architecture micro-services dockerisée
-Le système simule une architecture de production avec :
+
+Le projet simule une architecture de production micro-services dockerisée.
+
+## 2. Architecture
+__Composants :__
 - API REST (FastAPI)
 - Worker asynchrone
-- Queue Redis
-- Stockage objet MinIO
-- Monitoring Prometheus + Grafana (Admin)
+- Redis Queue
+- Stockage objet MinIO (S3 compatible)
+- Monitoring Prometheus
+- Dashboard Grafana
 - UI utilisateur
+- GPU acceleration (CUDA)
 
-## 2. Stacks 
-**Backend :**
-- Python 3.12
-- FastAPI
-- PyTorch
-- Whisper ASR
-- Redis
-- MinIO S3
+__Flow :__
+1. Upload via API
+2. Stockage MinIO
+3. Création job
+4. Mise en queue Redis
+5. Worker traite (GPU)
+6. Outputs générés
+7. Monitoring exposé via Prometheus 
 
-**IA/GPU :**
-- Whisper medium (OpenAI)
-- CUDA
-- GPU Acceleration (RTX 3050 Laptop)
-
-**Monitoring :**
-- Prometheus
-- Grafana
-- Metrics calculées avec Python
-
-**Infra :**
-- Docker
-- Nvidia Container Toolkit
-
-## 3. Features 
-**Upload :**
-- MP4/WAV/MP3
-- Validation type input
-- Stockage MinIO
-
-**Traitement :**
-- Queue Redis
-- Worker daemon (Python)
-- Job steps :
-    - uploaded
-    - queued
-    - running
-    - succeeded/failed
-
-**Outputs :**
-- transcript_text
-- subtitles_srt
-- video_embedded
-- video_with_subtitle_track
-
-**GPU :**
-- PyTorch CUDA-
-- Traitement accéléré
-
-**Monitoring :**
-- Jobs running
-- Jobs queued
-- Success / failure
-- GPU memory usage
-- Job duration
-
-**Admin :**
-- Dashboard Grafana autoprovisionné (Prometheus)
-
-**UI :**
-- Upload fichier
-- Choix outputs
-- Polling job status
-- Download résultats
-
-## 4. Installation
-> Prérequis : 
-- Docker Engine running 
-
-> Via ./Docker : 
+## 3. Modèle IA
 ```bash
-docker compose up -d --build
+openai/whisper-small.en
 ```
+Meilleur compromis que la version medium au niveau RAM / vitesse / précision pour l'hardware à disposition.
+
+## 4. Prérequis
+__Minimum :__
+- Docker Engine
+- Docker Compose
+- 12Gb RAM recommandés (cumul des services)
+
+__GPU :__
+- NVIDIA GPU (fallback CPU si non détecté)
+- Drivers NVIDIA à jour
+- NVIDIA Container Toolkit 
+> Check :
+```bash
+nvidia-smi
+```
+
+## 5. Installation & Lancement
+> Depuis la racine du projet : 
+```bash
+docker compose -f docker/docker-compose.yml up -d --build
+```
+
+> Contrôle : 
 ```bash
 docker ps
 ```
--> ![alt text](img/image.png)
+> Services attendus
 
-> Consultation :
-- UI : http://localhost:8000/ui (user)
-- API : http://localhost:8000/docs (debug)
-- MinIO : http://localhost:9001
-- Prometheus : http://localhost:9090 (cacher par sécurité ?)
-- Grafana : http://localhost:3001 (admin lock)
+![alt text](img/image.png)
 
-## 5. Structure 
-```txt
-README.MD
-requirements.api.txt
-requirements.worker.txt
-pytest.ini
-.dockerignore
-.gitignore
+> Stopper les services
+```bash
+docker compose -f docker/docker-compose.yml down
+```
 
-app/
-  __init__.py
-  main.py
-  media_rules.py
-  storage.py
-  static/
-    app.js
-    index.html
-    style.css
+> Rebuild
+```bash
+docker compose -f docker/docker-compose.yml down -v
+docker compose -f docker/docker-compose.yml up -d --build
+```
 
-pipeline/
-  __init__.py
-  processor.py
-  transcription.py
-  audio.py
-  video.py
-  subtitles.py
-  packaging.py
+> Accès aux services : 
+- Interface utilisateur : http://localhost:8000/ui
+- Api Docs (swagger) : http://localhost:8000/docs
+- MinIO Console : http://localhost:9001
+- Prometheus : http://localhost:9090 (non verouillé)
+- Grafana : http://localhost:3001 (id: admin/pw: admin)
 
-worker/
-  worker.py
-  metrics.py
-  queue.py
-  submit_job.py
-  
-test/
-  test_processor.py
-  test_api.py
-  conftest.py
+## 6. Tests
+>Tests unitaires
+```bash
+python -m pytest test/test_processor.py -v
+```
+>Tests API
+```bash
+python -m pytest test/test_api.py -v
+```
+>Tous les tests
+```bash
+python -m pytest test -v
+```
 
-docker/
-  docker-compose.yml
-  api.Dockerfile
-  worker.cpu.Dockerfile # pas utilisé atm
-  worker.gpu.Dockerfile
-  grafana/provisioning/
-    dashboards/
-      dashboard.yml #admin
-      /json
-          transcription-dashboard.json
-    datasources/
-        prometheus.yml
-  prometheus/
-    prometheus.yml
-  ```
+## 7. Monitoring
+Prometheus scrape :
+- Job status
+- Queue depth
+- Job duration
+- GPU memory usage
+- Success / failure
+
+Grafana dashboard auto-provisionné via :
+```bash
+Docker/grafana/provisioning/
+```
+
+## 8. Multi-utilisateurs
+- Les jobs sont indexés par ``client_id`` (1 par navigateur)
+- Isolation logique par utilisateur
+- Récupération des jobs après refresh UI
+- Gestion concurrente via Redis queue
+
+## 9. Scalabilité
+Le système peut évoluer via :
+- Scaling horizontal du worker
+- Déploiement Kubernetes
+- Séparation API / Worker sur VM distinctes
+- GPU dédié par worker
+
+## 10. Limitations actuelles
+- Single GPU
+- Pas de rate limiting
+- Pas d’auth forte
+- Pas de multi-GPU orchestration
